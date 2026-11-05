@@ -22,11 +22,14 @@ export function useWebSocket(pollId, onMessage) {
   const connect = useCallback(() => {
     if (!pollId) return;
 
-    // Build WS URL: Route through current host so Vite proxy handles /ws across LAN, localhost, and tunnels
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    let wsBase = `${protocol}//${window.location.host}`;
-    if (import.meta.env.VITE_WS_URL && !import.meta.env.DEV) {
-      wsBase = import.meta.env.VITE_WS_URL;
+    // Build WS URL: adapt for separate deployed backends or local proxies
+    let wsBase = import.meta.env.VITE_WS_URL;
+    if (!wsBase && import.meta.env.VITE_API_URL) {
+      wsBase = import.meta.env.VITE_API_URL.replace(/^http/, 'ws');
+    }
+    if (!wsBase) {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsBase = `${protocol}//${window.location.host}`;
     }
     wsBase = wsBase.replace(/\/$/, '');
     const wsUrl = `${wsBase}/ws/polls/${pollId}`;

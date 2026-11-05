@@ -1,12 +1,13 @@
 import axios from 'axios';
 
 function getApiBaseUrl() {
-  // Use relative path in browser so Vite proxy seamlessly handles /api
-  // This guarantees 100% connectivity over localhost, LAN Wi-Fi (192.168.x.x), and public tunnels
-  if (typeof window !== 'undefined' && window.location) {
-    return '';
+  const envUrl = import.meta.env.VITE_API_URL;
+  // If an external backend URL is configured (e.g. deployed on Render / Railway), use it
+  if (envUrl && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/$/, '');
   }
-  return import.meta.env.VITE_API_URL || '';
+  // Otherwise, use relative path so Vite proxy or single-domain hosting handles /api
+  return '';
 }
 
 export const api = axios.create({
