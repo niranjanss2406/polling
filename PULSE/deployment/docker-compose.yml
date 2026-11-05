@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # MongoDB Database Service
+  mongodb:
+    image: mongo:7.0
+    container_name: pulse-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: pulse_db
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - pulse-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis In-Memory Counter & Pub/Sub Service
+  redis:
+    image: redis:7.2-alpine
+    container_name: pulse-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - pulse-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Go Backend Service
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.backend
+    container_name: pulse-backend
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      GIN_MODE: release
+      MONGODB_URI: mongodb://mongodb:27017
+      MONGODB_DATABASE: pulse_db
+      REDIS_URL: redis:6379
+      JWT_SECRET: pulse_production_secret_guvi_key_2026_super_secure
+      FRONTEND_URL: http://localhost:3000
+      TOKEN_EXPIRY: 24h
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pulse-network
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.frontend
+    container_name: pulse-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - pulse-network
+
+networks:
+  pulse-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  redis_data:
+

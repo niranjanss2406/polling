@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+go_sdk/
+.env
+*.exe
+dist/
+build/
+.DS_Store
+Thumbs.db
+
