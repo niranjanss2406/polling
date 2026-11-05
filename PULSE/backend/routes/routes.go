@@ -3,6 +3,7 @@ package routes
 import (
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,22 @@ func SetupRoutes(r *gin.Engine, deps *RouteDependencies) {
 	// Global Middlewares
 	r.Use(middleware.CORSMiddleware())
 	r.Use(middleware.RateLimit(120, time.Minute))
+
+	// Root Welcome & Health Check Endpoint
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "healthy",
+			"platform":  "PULSE – Real-Time Interactive Polling API",
+			"version":   "1.0.0",
+			"message":   "Backend API is online and operational",
+			"timestamp": time.Now().UTC(),
+			"endpoints": gin.H{
+				"health":  "/api/health",
+				"polls":   "/api/polls",
+				"auth_me": "/api/auth/me",
+			},
+		})
+	})
 
 	// Health Check Endpoint
 	r.GET("/api/health", func(c *gin.Context) {
@@ -108,6 +125,38 @@ func SetupRoutes(r *gin.Engine, deps *RouteDependencies) {
 				protected.PATCH("/:id/reopen", middleware.AdminRequired(), deps.PollController.ReopenPoll)
 			}
 		}
+	}
+
+	// Detect if built frontend assets exist to serve full SPA directly from Go
+	distPath := ""
+	if _, err := os.Stat("./dist"); err == nil {
+		distPath = "./dist"
+	} else if _, err := os.Stat("../frontend/dist"); err == nil {
+		distPath = "../frontend/dist"
+	}
+
+	if distPath != "" {
+		r.Static("/assets", distPath+"/assets")
+		r.StaticFile("/favicon.svg", distPath+"/favicon.svg")
+		r.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/ws") {
+				c.JSON(http.StatusNotFound, gin.H{
+					"success": false,
+					"message": "API endpoint not found: " + c.Request.Method + " " + path,
+				})
+				return
+			}
+			c.File(distPath + "/index.html")
+		})
+	} else {
+		r.NoRoute(func(c *gin.Context) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"message": "Endpoint not found: " + c.Request.Method + " " + c.Request.URL.Path,
+				"help":    "Verify that the route starts with /api (e.g. /api/health, /api/polls)",
+			})
+		})
 	}
 }
 
