@@ -65,7 +65,7 @@ func (h *Hub) Run() {
 			h.mu.Unlock()
 
 		case message := <-h.Broadcast:
-			h.mu.RLock()
+			h.mu.Lock()
 			clients := h.rooms[message.PollID]
 			for client := range clients {
 				select {
@@ -75,7 +75,7 @@ func (h *Hub) Run() {
 					delete(clients, client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Sidebar from '../components/dashboard/Sidebar';
 import StatsCard from '../components/dashboard/StatsCard';
@@ -6,6 +6,8 @@ import PollCard from '../components/dashboard/PollCard';
 import Loader from '../components/common/Loader';
 import pollService from '../services/pollService';
 import { useAuth } from '../hooks/useAuth';
+import useWebSocket from '../hooks/useWebSocket';
+import { subscribePulseEvents } from '../utils/broadcast';
 import {
   BarChart3,
   CheckCircle2,
@@ -26,8 +28,8 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  const fetchDashboardData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const data = await pollService.getMyPolls();
@@ -35,15 +37,69 @@ export function Dashboard() {
       setPolls(pollList);
     } catch (err) {
       console.error('Failed to load polls:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to load dashboard data');
+      if (!silent) {
+        setError(err.response?.data?.message || err.message || 'Failed to load dashboard data');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  // Real-time handler to update poll counts and platform stats instantly
+  const handleVoteUpdate = useCallback((update) => {
+    const updatedPollId = update.pollId || update.poll_id;
+    const newResults = update.results;
+    if (!updatedPollId) return;
+
+    setPolls((prevPolls) =>
+      prevPolls.map((p) => {
+        const pId = p.id || p._id;
+        if (pId === updatedPollId) {
+          return {
+            ...p,
+            total_votes: newResults?.total_votes ?? (p.total_votes || 0) + 1,
+            options: newResults?.options ?? p.options,
+          };
+        }
+        return p;
+      })
+    );
   }, []);
+
+  // Global WebSocket listener for live platform events
+  const handleWebSocketMessage = useCallback(
+    (message) => {
+      if (message.type === 'vote_update') {
+        handleVoteUpdate(message);
+      }
+    },
+    [handleVoteUpdate]
+  );
+  useWebSocket('global', handleWebSocketMessage);
+
+  // Cross-tab real-time sync
+  useEffect(() => {
+    const unsubscribe = subscribePulseEvents((event) => {
+      if (event.type === 'vote_cast' || event.type === 'vote_update') {
+        handleVoteUpdate(event);
+      }
+    });
+    return unsubscribe;
+  }, [handleVoteUpdate]);
+
+  // Gentle fallback silent background sync every 4 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchDashboardData(true);
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [fetchDashboardData]);
 
   const handleStatusChange = async (pollId, action) => {
     try {

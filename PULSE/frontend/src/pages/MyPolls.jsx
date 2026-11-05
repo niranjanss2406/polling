@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Sidebar from '../components/dashboard/Sidebar';
 import PollCard from '../components/dashboard/PollCard';
 import Loader from '../components/common/Loader';
 import pollService from '../services/pollService';
 import { useAuth } from '../hooks/useAuth';
+import useWebSocket from '../hooks/useWebSocket';
+import { subscribePulseEvents } from '../utils/broadcast';
 import { isPollActive } from '../utils/formatters';
 import {
   Search,
@@ -23,8 +25,8 @@ export function MyPolls() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all'); // 'all' | 'active' | 'closed'
 
-  const fetchPolls = async () => {
-    setLoading(true);
+  const fetchPolls = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const data = await pollService.getMyPolls();
@@ -32,15 +34,69 @@ export function MyPolls() {
       setPolls(pollList);
     } catch (err) {
       console.error('Failed to load polls:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to load polls');
+      if (!silent) {
+        setError(err.response?.data?.message || err.message || 'Failed to load polls');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchPolls();
+  }, [fetchPolls]);
+
+  // Real-time vote update handler
+  const handleVoteUpdate = useCallback((update) => {
+    const updatedPollId = update.pollId || update.poll_id;
+    const newResults = update.results;
+    if (!updatedPollId) return;
+
+    setPolls((prevPolls) =>
+      prevPolls.map((p) => {
+        const pId = p.id || p._id;
+        if (pId === updatedPollId) {
+          return {
+            ...p,
+            total_votes: newResults?.total_votes ?? (p.total_votes || 0) + 1,
+            options: newResults?.options ?? p.options,
+          };
+        }
+        return p;
+      })
+    );
   }, []);
+
+  // Global WebSocket listener
+  const handleWebSocketMessage = useCallback(
+    (message) => {
+      if (message.type === 'vote_update') {
+        handleVoteUpdate(message);
+      }
+    },
+    [handleVoteUpdate]
+  );
+  useWebSocket('global', handleWebSocketMessage);
+
+  // Cross-tab real-time sync
+  useEffect(() => {
+    const unsubscribe = subscribePulseEvents((event) => {
+      if (event.type === 'vote_cast' || event.type === 'vote_update') {
+        handleVoteUpdate(event);
+      }
+    });
+    return unsubscribe;
+  }, [handleVoteUpdate]);
+
+  // Gentle fallback silent background sync every 4 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchPolls(true);
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [fetchPolls]);
 
   const handleStatusChange = async (pollId, action) => {
     try {

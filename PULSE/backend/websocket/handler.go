@@ -56,7 +56,7 @@ func HandleWebSocket(hub *Hub) gin.HandlerFunc {
 		hub.Register <- client
 
 		// Requirement 12: When a new client connects, send the current poll results immediately.
-		if ResultFetcher != nil {
+		if ResultFetcher != nil && pollID != "global" {
 			results, err := ResultFetcher.GetResults(pollID)
 			if err == nil && results != nil {
 				initialMsg, err := json.Marshal(map[string]interface{}{

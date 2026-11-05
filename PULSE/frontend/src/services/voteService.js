@@ -1,4 +1,5 @@
 import api from './api';
+import { broadcastPulseEvent } from '../utils/broadcast';
 
 export const voteService = {
   getOrCreateVoterId(forceNew = false) {
@@ -86,6 +87,16 @@ export const voteService = {
       voter_id: voterId,
     });
     this.markVotedLocally(pollId, optionIds, userId);
+
+    // Broadcast in real-time across all open tabs on this browser
+    const latestResults = response.data?.results || response.data;
+    broadcastPulseEvent({
+      type: 'vote_cast',
+      pollId,
+      results: latestResults,
+      optionIds,
+    });
+
     return response.data;
   },
 };

@@ -45,19 +45,39 @@ export function useWebSocket(pollId, onMessage) {
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
-          setLastEvent(data);
+          // Robust JSON parsing: handles single objects or splits any proxy-concatenated objects
+          const parsePayloads = (raw) => {
+            try {
+              return [JSON.parse(raw)];
+            } catch {
+              // Fallback: match individual top-level JSON objects
+              const matches = raw.match(/\{.*?\}(?=\{|\s*$)/g) || [];
+              const parsed = [];
+              for (const m of matches) {
+                try {
+                  parsed.push(JSON.parse(m));
+                } catch {}
+              }
+              if (parsed.length > 0) return parsed;
+              throw new Error('Unparseable WebSocket payload');
+            }
+          };
 
-          // Handle viewer count updates
-          if (data.type === 'viewer_count' && typeof data.viewers === 'number') {
-            setLiveViewers(data.viewers);
-          }
+          const payloads = parsePayloads(event.data);
+          for (const data of payloads) {
+            setLastEvent(data);
 
-          if (onMessageRef.current) {
-            onMessageRef.current(data);
+            // Handle viewer count updates
+            if (data.type === 'viewer_count' && typeof data.viewers === 'number') {
+              setLiveViewers(data.viewers);
+            }
+
+            if (onMessageRef.current) {
+              onMessageRef.current(data);
+            }
           }
         } catch (err) {
-          console.error('Error parsing WebSocket message:', err);
+          console.error('Error parsing WebSocket message:', err, event.data);
         }
       };
 

@@ -139,7 +139,10 @@ func (s *voteService) SubmitVote(ctx context.Context, pollID string, req *models
 	if websocket.GlobalHub != nil {
 		importJson, err := json.Marshal(broadcastPayload)
 		if err == nil {
+			// Broadcast to the specific poll room
 			websocket.GlobalHub.BroadcastToPoll(pollID, importJson)
+			// Broadcast to global room (Dashboard, MyPolls, multi-tab sync)
+			websocket.GlobalHub.BroadcastToPoll("global", importJson)
 		}
 	}
 

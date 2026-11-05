@@ -12,9 +12,9 @@ export function usePoll(pollId) {
   const [hasVoted, setHasVoted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchPollData = useCallback(async () => {
+  const fetchPollData = useCallback(async (silent = false) => {
     if (!pollId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const [pollData, resultsData, votedStatus] = await Promise.all([
@@ -29,9 +29,11 @@ export function usePoll(pollId) {
       setHasVoted(votedStatus);
     } catch (err) {
       console.error('Failed to load poll:', err);
-      setError(err.response?.data?.message || err.message || 'Failed to load poll');
+      if (!silent) {
+        setError(err.response?.data?.message || err.message || 'Failed to load poll');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [pollId, user?.id]);
 

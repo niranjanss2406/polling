@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import usePoll from '../hooks/usePoll';
 import useWebSocket from '../hooks/useWebSocket';
@@ -7,6 +7,7 @@ import SharePoll from '../components/polls/SharePoll';
 import Loader from '../components/common/Loader';
 import pollService from '../services/pollService';
 import { useAuth } from '../hooks/useAuth';
+import { broadcastPulseEvent, subscribePulseEvents } from '../utils/broadcast';
 import {
   ArrowLeft,
   Share2,
@@ -38,22 +39,68 @@ export function PollResults() {
     refreshPoll,
   } = usePoll(id);
 
+  // Unified vote synchronization handler
+  const handleVoteSync = useCallback(
+    (update) => {
+      const targetPollId = update.pollId || update.poll_id;
+      if (targetPollId && targetPollId !== id) return;
+
+      if (update.results) {
+        setResults(update.results);
+        setPoll((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            total_votes: update.results.total_votes ?? prev.total_votes,
+            options: update.results.options ?? prev.options,
+          };
+        });
+      }
+      if (update.poll) {
+        setPoll(update.poll);
+      }
+    },
+    [id, setResults, setPoll]
+  );
+
   // WebSocket connection for real-time updates
   const handleWebSocketMessage = useCallback(
     (message) => {
       if (message.type === 'vote_update' || message.type === 'initial_state') {
-        if (message.results) {
-          setResults(message.results);
-        }
-        if (message.poll) {
-          setPoll(message.poll);
+        handleVoteSync(message);
+        if (message.type === 'vote_update' && message.results) {
+          broadcastPulseEvent({
+            type: 'vote_update',
+            pollId: message.poll_id || id,
+            results: message.results,
+          });
         }
       }
     },
-    [setResults, setPoll]
+    [handleVoteSync, id]
   );
 
   const { isConnected, liveViewers } = useWebSocket(id, handleWebSocketMessage);
+
+  // Cross-tab real-time sync across multiple open browser tabs
+  useEffect(() => {
+    const unsubscribe = subscribePulseEvents((event) => {
+      if (event.type === 'vote_cast' || event.type === 'vote_update') {
+        handleVoteSync(event);
+      }
+    });
+    return unsubscribe;
+  }, [handleVoteSync]);
+
+  // Gentle fallback silent background sync every 4 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshPoll(true);
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [refreshPoll]);
 
   const active = isPollActive(poll);
   const isOwner = user && poll && (user.id === poll.creator_id || user._id === poll.creator_id);

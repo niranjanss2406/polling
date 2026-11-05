@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import usePoll from '../hooks/usePoll';
 import useWebSocket from '../hooks/useWebSocket';
@@ -6,6 +6,7 @@ import VotingForm from '../components/polls/VotingForm';
 import LiveResults from '../components/results/LiveResults';
 import SharePoll from '../components/polls/SharePoll';
 import Loader from '../components/common/Loader';
+import { broadcastPulseEvent, subscribePulseEvents } from '../utils/broadcast';
 import { Activity, Radio, AlertCircle, ArrowLeft, BarChart2 } from 'lucide-react';
 
 export function PublicPoll() {
@@ -24,22 +25,69 @@ export function PublicPoll() {
     refreshPoll,
   } = usePoll(pollId);
 
+  // Unified vote synchronization handler
+  const handleVoteSync = useCallback(
+    (update) => {
+      const targetPollId = update.pollId || update.poll_id;
+      if (targetPollId && targetPollId !== pollId) return;
+
+      if (update.results) {
+        setResults(update.results);
+        setPoll((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            total_votes: update.results.total_votes ?? prev.total_votes,
+            options: update.results.options ?? prev.options,
+          };
+        });
+      }
+      if (update.poll) {
+        setPoll(update.poll);
+      }
+    },
+    [pollId, setResults, setPoll]
+  );
+
   // WebSocket for real-time live results sync
   const handleWebSocketMessage = useCallback(
     (message) => {
       if (message.type === 'vote_update' || message.type === 'initial_state') {
-        if (message.results) {
-          setResults(message.results);
-        }
-        if (message.poll) {
-          setPoll(message.poll);
+        handleVoteSync(message);
+        // Relay to other tabs on the same device so non-websocket tabs catch it instantly
+        if (message.type === 'vote_update' && message.results) {
+          broadcastPulseEvent({
+            type: 'vote_update',
+            pollId: message.poll_id || pollId,
+            results: message.results,
+          });
         }
       }
     },
-    [setResults, setPoll]
+    [handleVoteSync, pollId]
   );
 
   const { isConnected, liveViewers } = useWebSocket(pollId, handleWebSocketMessage);
+
+  // Cross-tab real-time sync across multiple open browser tabs
+  useEffect(() => {
+    const unsubscribe = subscribePulseEvents((event) => {
+      if (event.type === 'vote_cast' || event.type === 'vote_update') {
+        handleVoteSync(event);
+      }
+    });
+    return unsubscribe;
+  }, [handleVoteSync]);
+
+  // Gentle fallback silent background sync every 4 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshPoll(true);
+      }
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [refreshPoll]);
 
   if (loading) {
     return (

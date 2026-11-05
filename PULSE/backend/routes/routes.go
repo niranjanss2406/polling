@@ -86,7 +86,7 @@ func SetupRoutes(r *gin.Engine, deps *RouteDependencies) {
 			"lan_ip":     lanIP,
 			"port":       5173,
 			"lan_url":    "http://" + lanIP + ":5173",
-			"public_url": "https://number-fotos-interior-appraisal.trycloudflare.com",
+			"public_url": "https://table-science-gamma-decreased.trycloudflare.com",
 			"api_port":   8080,
 		})
 	})

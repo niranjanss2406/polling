@@ -11,7 +11,7 @@ const (
 	writeWait      = 10 * time.Second
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512
+	maxMessageSize = 4096
 )
 
 type Client struct {
@@ -61,20 +61,23 @@ func (c *Client) WritePump() {
 				return
 			}
 
-			w, err := c.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			// Write primary message as an isolated TextMessage frame
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
-			_, _ = w.Write(message)
 
-			// Drain queued messages
+			// Drain any queued messages, writing each as its own isolated TextMessage frame
 			n := len(c.Send)
 			for i := 0; i < n; i++ {
-				_, _ = w.Write(<-c.Send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
+				extraMsg, extraOk := <-c.Send
+				if !extraOk {
+					_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
+				_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := c.Conn.WriteMessage(websocket.TextMessage, extraMsg); err != nil {
+					return
+				}
 			}
 
 		case <-ticker.C:
