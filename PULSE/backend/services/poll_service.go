@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"pulse-backend/models"
 	"pulse-backend/repositories"
 	"pulse-backend/utils"
+	"pulse-backend/websocket"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -23,7 +25,7 @@ type PollService interface {
 	UpdatePoll(ctx context.Context, pollID, creatorID string, req *models.UpdatePollRequest) (*models.Poll, error)
 	ClosePoll(ctx context.Context, pollID, creatorID string) error
 	ReopenPoll(ctx context.Context, pollID, creatorID string) error
-	DeletePoll(ctx context.Context, pollID, creatorID string) error
+	DeletePoll(ctx context.Context, pollID, creatorID string, isAdmin bool) error
 }
 
 type pollService struct {
@@ -74,6 +76,17 @@ func (s *pollService) CreatePoll(ctx context.Context, creatorID string, req *mod
 
 	if err := s.pollRepo.Create(ctx, poll); err != nil {
 		return nil, err
+	}
+
+	// Real-time broadcast to all connected clients on feed/dashboard
+	if websocket.GlobalHub != nil {
+		msg, err := json.Marshal(map[string]interface{}{
+			"type": "poll_created",
+			"poll": poll,
+		})
+		if err == nil {
+			websocket.GlobalHub.BroadcastToPoll("global", msg)
+		}
 	}
 
 	return poll, nil
@@ -177,16 +190,32 @@ func (s *pollService) ReopenPoll(ctx context.Context, pollID, creatorID string) 
 	return s.pollRepo.UpdateStatus(ctx, poll.ID, "active")
 }
 
-func (s *pollService) DeletePoll(ctx context.Context, pollID, creatorID string) error {
+func (s *pollService) DeletePoll(ctx context.Context, pollID, creatorID string, isAdmin bool) error {
 	poll, err := s.GetPoll(ctx, pollID)
 	if err != nil {
 		return err
 	}
 
-	if poll.CreatorID.Hex() != creatorID {
+	if !isAdmin && poll.CreatorID.Hex() != creatorID {
 		return errors.New("unauthorized: you do not own this poll")
 	}
 
-	return s.pollRepo.Delete(ctx, poll.ID)
+	if err := s.pollRepo.Delete(ctx, poll.ID); err != nil {
+		return err
+	}
+
+	// Real-time broadcast deletion to all connected clients
+	if websocket.GlobalHub != nil {
+		msg, err := json.Marshal(map[string]interface{}{
+			"type":    "poll_deleted",
+			"poll_id": pollID,
+		})
+		if err == nil {
+			websocket.GlobalHub.BroadcastToPoll("global", msg)
+			websocket.GlobalHub.BroadcastToPoll(pollID, msg)
+		}
+	}
+
+	return nil
 }
 

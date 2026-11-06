@@ -22,6 +22,15 @@ export const voteService = {
     return userId ? `pulse_voted_user_${userId}` : 'pulse_voted_guest';
   },
 
+  getUserVotedOptions(pollId, userId = null) {
+    const key = this.getStorageKey(userId);
+    const votedPolls = JSON.parse(localStorage.getItem(key) || '{}');
+    if (votedPolls[pollId] && Array.isArray(votedPolls[pollId].optionIds)) {
+      return votedPolls[pollId].optionIds;
+    }
+    return [];
+  },
+
   hasVotedLocally(pollId, userId = null) {
     const key = this.getStorageKey(userId);
     const votedPolls = JSON.parse(localStorage.getItem(key) || '{}');

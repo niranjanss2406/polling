@@ -86,7 +86,7 @@ func SetupRoutes(r *gin.Engine, deps *RouteDependencies) {
 			"lan_ip":     lanIP,
 			"port":       5173,
 			"lan_url":    "http://" + lanIP + ":5173",
-			"public_url": "https://table-science-gamma-decreased.trycloudflare.com",
+			"public_url": "https://usage-heard-compound-special.trycloudflare.com",
 			"api_port":   8080,
 		})
 	})
@@ -114,15 +114,15 @@ func SetupRoutes(r *gin.Engine, deps *RouteDependencies) {
 			polls.GET("/:id/voted", middleware.OptionalAuth(), deps.VoteController.CheckVoted)
 			polls.POST("/:id/vote", middleware.OptionalAuth(), deps.VoteController.SubmitVote)
 
-			// Creator Endpoints (Restricted to Admin: niranjanss2406@gmail.com)
+			// Creator Endpoints (Authenticated Users)
 			protected := polls.Group("")
 			protected.Use(middleware.AuthRequired())
 			{
-				protected.POST("", middleware.AdminRequired(), deps.PollController.CreatePoll)
-				protected.PUT("/:id", middleware.AdminRequired(), deps.PollController.UpdatePoll)
-				protected.DELETE("/:id", middleware.AdminRequired(), deps.PollController.DeletePoll)
-				protected.PATCH("/:id/close", middleware.AdminRequired(), deps.PollController.ClosePoll)
-				protected.PATCH("/:id/reopen", middleware.AdminRequired(), deps.PollController.ReopenPoll)
+				protected.POST("", deps.PollController.CreatePoll)
+				protected.PUT("/:id", deps.PollController.UpdatePoll)
+				protected.DELETE("/:id", deps.PollController.DeletePoll)
+				protected.PATCH("/:id/close", deps.PollController.ClosePoll)
+				protected.PATCH("/:id/reopen", deps.PollController.ReopenPoll)
 			}
 		}
 	}

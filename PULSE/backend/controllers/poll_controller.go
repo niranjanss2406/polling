@@ -175,7 +175,11 @@ func (pc *PollController) DeletePoll(c *gin.Context) {
 	}
 	pollID := c.Param("id")
 
-	err := pc.pollService.DeletePoll(c.Request.Context(), pollID, userID.(string))
+	role, _ := c.Get("userRole")
+	email, _ := c.Get("userEmail")
+	isAdmin := role == "admin" || email == "niranjanss2406@gmail.com"
+
+	err := pc.pollService.DeletePoll(c.Request.Context(), pollID, userID.(string), isAdmin)
 	if err != nil {
 		utils.JSONError(c, http.StatusBadRequest, err.Error())
 		return
